@@ -1,6 +1,6 @@
 from exptools.core.session import MRISession
 from StopStimulus import StopStimulus, FixationCircle
-from StopTrial import StopSignalTrial
+from StopTrial import StopSignalTrial, EndOfBlockTrial, TestSoundTrial
 from psychopy import visual, data
 import pandas as pd
 import numpy as np
@@ -14,7 +14,7 @@ import copy
 
 class StopSignalSession(MRISession):
 
-    def __init__(self, subject_initials, index_number, run, tr, config):
+    def __init__(self, subject_initials, index_number, tr, config):
         super(StopSignalSession, self).__init__(subject_initials,
                                                 index_number,
                                                 tr=tr,
@@ -23,7 +23,6 @@ class StopSignalSession(MRISession):
                                                 mri_trigger_key=config.get('mri', 'mri_trigger_key'))
 
         self.config = config
-        self.run_nr = run
 
         if config.get('audio', 'engine') == 'psychopy':
             # BEFORE moving on, ensure that the correct audio driver is selected
@@ -108,13 +107,13 @@ class StopSignalSession(MRISession):
 
     def load_design(self):
 
-        fn = 'sub-' + str(self.subject_initials).zfill(3) + '_session-' + str(self.index_number) + '_run-' + str(self.run_nr) + '-design'
+        fn = 'sub-' + str(self.subject_initials).zfill(3) + '_session-' + str(self.index_number) + '_design'
         design = pd.read_csv(os.path.join('designs', fn + '.csv'), sep='\t', index_col=False)
 
         self.design = design
-        self.design.direction = pd.to_numeric(self.design.direction)
-        self.design.stop_trial = pd.to_numeric(self.design.stop_trial)
-        self.design.jitter = pd.to_numeric(self.design.jitter)
+        self.design = self.design.apply(pd.to_numeric)  # cast all to numeric
+#        self.design.stop_trial = pd.to_
+        print(self.design)
 
     def prepare_staircase(self):
         # TODO: load from previous run?
@@ -172,52 +171,76 @@ class StopSignalSession(MRISession):
                                                     lineColorSpace='rgb', fillColorSpace='rgb')
 
     def run(self):
-        """ Runs a block of this Stop Signal task"""
+        """ Runs this Stop Signal task"""
 
-        for i in range(self.design.shape[0]):
-            # prepare the parameters of the following trial based on the shuffled trial array
-            this_trial_info = self.design.iloc[i]
+        test_sound = TestSoundTrial(ID=-1, parameters={}, phase_durations=[1000], session=self, screen=self.screen,
+                                    tracker=None)
+        test_sound.run()
 
-            is_stop_trial = this_trial_info['stop_trial']
-            if is_stop_trial:
-                this_trial_staircase_id = int(this_trial_info['staircase_id'])
-                this_trial_ssd = next(self.stairs[this_trial_staircase_id])
-                this_staircase_start_val = self.stairs[this_trial_staircase_id].extraInfo['thisStart']
-            else:
-                this_trial_staircase_id = -1
-                this_trial_ssd = -1
-                this_staircase_start_val = -1
+        trial_ID = 0
+        for block_n in np.unique(self.design.block):
+            this_block_design = self.design.loc[self.design.block == block_n]
 
-            this_trial_parameters = {'direction': this_trial_info['direction'],
-                                     'stop_trial': this_trial_info['stop_trial'],
-                                     'current_ssd': this_trial_ssd,
-                                     'current_staircase': this_trial_staircase_id,
-                                     'staircase_start_val': this_staircase_start_val}
+            for block_trial_ID in range(this_block_design.shape[0]):
+                this_trial_info = this_block_design.iloc[block_trial_ID]
 
-            these_phase_durations = self.phase_durations.copy()
-            these_phase_durations[1] = this_trial_info.jitter
-            these_phase_durations[3] = 0  # 9 - these_phase_durations[1] - these_phase_durations[2]
+                is_stop_trial = this_trial_info['stop_trial']
+                print(is_stop_trial)
+                if is_stop_trial:
+                    this_trial_staircase_id = int(this_trial_info['staircase_id'])
+                    this_trial_ssd = next(self.stairs[this_trial_staircase_id])
+                    this_staircase_start_val = self.stairs[this_trial_staircase_id].extraInfo['thisStart']
+                else:
+                    this_trial_staircase_id = -1
+                    this_trial_ssd = -1
+                    this_staircase_start_val = -1
 
-            this_trial = StopSignalTrial(ID=i,
-                                         parameters=this_trial_parameters,
-                                         phase_durations=these_phase_durations,
+                this_trial_parameters = {'direction': int(this_trial_info['direction']),
+                                         'stop_trial': int(this_trial_info['stop_trial']),
+                                         'current_ssd': this_trial_ssd,
+                                         'current_staircase': this_trial_staircase_id,
+                                         'staircase_start_val': this_staircase_start_val,
+                                         'block': block_n,
+                                         'block_trial_ID': block_trial_ID}
+
+                these_phase_durations = self.phase_durations.copy()
+                these_phase_durations[1] = this_trial_info.jitter
+                these_phase_durations[3] = 1  # 9 - these_phase_durations[1] - these_phase_durations[2]
+
+                this_trial = StopSignalTrial(ID=trial_ID,
+                                             parameters=this_trial_parameters,
+                                             phase_durations=these_phase_durations,
+                                             session=self,
+                                             screen=self.screen)
+
+                # run the prepared trial
+                this_trial.run()
+                trial_ID += 1
+
+                # Update staircase if this was a stop trial
+                if is_stop_trial:
+                    if this_trial.response_measured:
+                        # Failed stop: Decrease SSD
+                        self.stairs[this_trial_staircase_id].addData(1)
+                    else:
+                        # Successful stop: Increase SSD
+                        self.stairs[this_trial_staircase_id].addData(0)
+
+                if self.stopped:
+                    # out of trial
+                    break
+
+            if self.stopped:
+                # out of block
+                break
+
+            # end of block
+            this_trial = EndOfBlockTrial(ID=int('999' + str(block_n)),
+                                         parameters={},
+                                         phase_durations=[1000],
                                          session=self,
                                          screen=self.screen)
-
-            # run the prepared trial
             this_trial.run()
-
-            # Update staircase if this was a stop trial
-            if is_stop_trial:
-                if this_trial.response_measured:
-                    # Failed stop: Decrease SSD
-                    self.stairs[this_trial_staircase_id].addData(0)
-                else:
-                    # Successful stop: Increase SSD
-                    self.stairs[this_trial_staircase_id].addData(1)
-
-            if self.stopped == True:
-                break
 
         self.close()
 
@@ -248,7 +271,7 @@ if __name__ == '__main__':
 
     # EMULATOR
     from psychopy.hardware.emulator import launchScan
-    scanner_emulator = launchScan(win=sess.screen, settings={'TR': .5, 'volumes': 30000, 'sync': 't'}, mode='Test')
+    scanner_emulator = launchScan(win=sess.screen, settings={'TR': 3, 'volumes': 30000, 'sync': 't'}, mode='Test')
 
     # run
     sess.run()
