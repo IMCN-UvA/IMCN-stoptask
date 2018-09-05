@@ -10,10 +10,13 @@ class StopSignalTrial(MRITrial):
                                               session=session,
                                               screen=screen,
                                               tracker=tracker)
-
+        self.trs_recorded = 0
         self.ID = ID
         self.has_bleeped = False
         self.response_measured = False  # Has the pp responded yet?
+        self.response = None
+        self.rt = -1
+        self.bleep_time = -1
 
         if bool(parameters['direction']):
             self.stim = self.session.left_stim
@@ -28,7 +31,7 @@ class StopSignalTrial(MRITrial):
         self.parameters = parameters
 
         # initialize times
-        self.t_time = self.jitter_time = self.stimulus_time = self.iti_time = None
+        self.t_time = self.jitter_time = self.stimulus_time = self.iti_time = -1
 
     def event(self):
 
@@ -41,16 +44,29 @@ class StopSignalTrial(MRITrial):
                     print 'run canceled by user'
 
                 # it handles both numeric and lettering modes
-                elif ev == '+':
+                elif ev == '+' or ev == 'equal':
                     self.events.append([-99, time, self.session.clock.getTime() - self.start_time])
                     self.stopped = True
                     print 'trial canceled by user'
 
                 elif ev == self.session.mri_trigger_key:  # TR pulse
-                    self.events.append([99, time, self.session.clock.getTime() - self.start_time])
+                    self.trs_recorded += 1
+                    if self.phase == 0:
+                        if self.trs_recorded > self.session.warmup_trs:
+                            if self.parameters['block_trial_ID'] == 0:
+                                # make sure to register this pulse now as the start of the block/run
+                                self.session.block_start_time = time
+
+                    self.events.append([99,
+                                        time,  # absolute time since session start
+                                        time - self.start_time,  # time since trial start
+                                        time - self.session.block_start_time,  # time since block start
+                                        self.ID])  # trial ID seems useful maybe
+
                     # phase 0 is ended by the MR trigger
                     if self.phase == 0:
-                        self.phase_forward()
+                        if self.trs_recorded > self.session.warmup_trs:
+                            self.phase_forward()
 
                 elif ev in self.session.response_button_signs:
                     self.events.append([ev, time,  # absolute time since start of experiment
@@ -59,7 +75,10 @@ class StopSignalTrial(MRITrial):
                                         'key_press'])
 
                     if self.phase == 2:
-                        self.response_measured = True
+                        if not self.response_measured:
+                            self.response = ev
+                            self.rt = self.stimulus_time - self.jitter_time  # this is RT, since self.stimulus_time is 'now'
+                            self.response_measured = True
 
             super(StopSignalTrial, self).key_event(ev)
 
@@ -77,7 +96,7 @@ class StopSignalTrial(MRITrial):
         while not self.stopped:
             self.run_time = self.session.clock.getTime() - self.start_time
 
-            # Waits for scanner pulse. If first
+            # Waits for scanner pulse.
             if self.phase == 0:
                 self.t_time = self.session.clock.getTime()
                 if not isinstance(self.session, MRISession):
@@ -97,6 +116,7 @@ class StopSignalTrial(MRITrial):
 
                 if self.stop_trial and not self.has_bleeped:
                     if (self.stimulus_time - self.jitter_time) > self.parameters['current_ssd']:
+                        self.bleep_time = self.session.clock.getTime()  # ABSOLUTE bleep time
                         self.session.play_bleep()
                         self.key_event('s')
                         self.events.append([5,
@@ -260,10 +280,10 @@ class TestSoundTrial(MRITrial):
                     print 'trial canceled by user'
 
                 elif ev == self.session.mri_trigger_key:  # TR pulse
-                    self.events.append([99, time, self.session.clock.getTime() - self.start_time])
+                    self.events.append([99, time, self.session.clock.getTime() - self.start_time, self.ID])
 
                 elif ev in self.session.response_button_signs:
-                    self.events.append([ev, time, self.session.clock.getTime() - self.start_time, 'key_press'])
+                    self.events.append([2, time, self.session.clock.getTime() - self.start_time, ev, 'key_press'])
 
                 elif ev in ['s']:
                     self.session.play_bleep()
