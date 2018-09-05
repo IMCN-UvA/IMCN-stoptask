@@ -7,7 +7,10 @@ Based on Nipype Configuration file
 logging options : INFO, DEBUG
 @author: Gilles de Hollander '''
 
-import configparser
+try:
+    import configparser
+except:
+    import ConfigParser as configparser
 import os
 import exptools 
 import json
