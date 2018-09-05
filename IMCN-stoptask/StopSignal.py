@@ -2,6 +2,8 @@ from exptools.core.session import MRISession
 from StopStimulus import StopStimulus, FixationCircle
 from StopTrial import StopSignalTrial, EndOfBlockTrial, TestSoundTrial
 from psychopy import visual, data
+import datetime
+import glob
 import pandas as pd
 import numpy as np
 import os
@@ -10,11 +12,12 @@ import subprocess
 import wave
 from scipy.io import wavfile
 import copy
+import cPickle as pkl
 
 
 class StopSignalSession(MRISession):
 
-    def __init__(self, subject_initials, index_number, tr, config):
+    def __init__(self, subject_initials, index_number, tr, start_block, config):
         super(StopSignalSession, self).__init__(subject_initials,
                                                 index_number,
                                                 tr=tr,
@@ -23,6 +26,8 @@ class StopSignalSession(MRISession):
                                                 mri_trigger_key=config.get('mri', 'mri_trigger_key'))
 
         self.config = config
+        self.start_block = start_block  # allows for starting at a later block than 1
+        self.warmup_trs = config.get('mri', 'warmup_trs')
 
         if config.get('audio', 'engine') == 'psychopy':
             # BEFORE moving on, ensure that the correct audio driver is selected
@@ -57,6 +62,10 @@ class StopSignalSession(MRISession):
                                     wait_blanking=config.get('screen', 'wait_blanking'),
                                     screen_nr=config.get('screen', 'screen_nr'),
                                     mouse_visible=config.get('screen', 'mouse_visible'))
+
+        # Try this
+        # TODO: think about really including this?
+        self.screen.recordFrameIntervals = True
 
         self.phase_durations = np.array([-0.0001,  # wait for scan pulse
                                          -5,
@@ -113,38 +122,60 @@ class StopSignalSession(MRISession):
         self.design = design
         self.design = self.design.apply(pd.to_numeric)  # cast all to numeric
 #        self.design.stop_trial = pd.to_
-        print(self.design)
+#        print(self.design)
 
     def prepare_staircase(self):
         # TODO: load from previous run?
 
-        n_stop_trials = self.design.stop_trial.sum()
+        # check for old file
+        now = datetime.datetime.now()
+        opfn = now.strftime("%Y-%m-%d")
+        expected_filename = str(self.subject_initials) + '_' + str(self.index_number) + '_' + opfn
+        fns = glob.glob('./data/' + expected_filename + '_*_staircases.pkl')
 
-        # Make dict
-        info = {'startPoints': [.050, .100, .150, .200]}  # start points for the four staircases
+        if self.start_block > 1 and len(fns) == 1:
+            # if previous run was created
+            with open(fns[0], 'r') as f:
+                self.stairs = pkl.load(f)
+        else:
+            # Make dict
+            info = {'startPoints': [.050, .100, .150, .200]}  # start points for the four staircases
 
-        # create staircases
-        self.stairs = []
-        for thisStart in info['startPoints']:
-            # we need a COPY of the info for each staircase
-            # (or the changes here will be made to all the other staircases)
-            thisInfo = copy.copy(info)
+            # create staircases
+            self.stairs = []
+            for thisStart in info['startPoints']:
+                # we need a COPY of the info for each staircase
+                # (or the changes here will be made to all the other staircases)
+                thisInfo = copy.copy(info)
 
-            # now add any specific info for this staircase
-            thisInfo['thisStart'] = thisStart  # we might want to keep track of this
-            thisStair = data.StairHandler(startVal=thisStart,
-                                          extraInfo=thisInfo,
-                                          stepType='lin',
-                                          minVal=0,
-                                          nTrials=1000,
-                                          maxVal=1.000,
-                                          stepSizes=[0.050])
-            self.stairs.append(thisStair)
+                # now add any specific info for this staircase
+                thisInfo['thisStart'] = thisStart  # we might want to keep track of this
+                thisStair = data.StairHandler(startVal=thisStart,
+                                              extraInfo=thisInfo,
+                                              stepType='lin',
+                                              minVal=0,
+                                              nTrials=1000,
+                                              maxVal=1.000,
+                                              stepSizes=[0.050])
+                self.stairs.append(thisStair)
 
-        staircase_idx = np.tile([0, 1, 2, 3], reps=1000)[:n_stop_trials]
-        np.random.shuffle(staircase_idx)
+            # Save staircases
+            with open(self.output_file + '_staircases.pkl', 'w') as f:
+                pkl.dump(self.stairs, f)
+
         self.design.staircase_ID = -1
-        self.design.loc[self.design.stop_trial == 1, 'staircase_id'] = staircase_idx
+        for block in np.unique(self.design.block):
+            if block < self.start_block:
+                continue
+
+            # how many stop trials this block?
+            n_stop_trials = self.design.loc[self.design.block == block].stop_trial.sum()
+            staircase_idx = np.tile([0, 1, 2, 3], reps=1000)[:n_stop_trials]
+            np.random.shuffle(staircase_idx)
+
+            # append to design
+            self.design.loc[(self.design.stop_trial == 1) & (self.design.block == block), 'staircase_id'] = \
+                staircase_idx
 
     def prepare_objects(self):
         config = self.config
@@ -170,22 +201,74 @@ class StopSignalSession(MRISession):
                                                     lineColor='red', units='deg',
                                                     lineColorSpace='rgb', fillColorSpace='rgb')
 
+    def save_data(self, trial_handler=None, block_n='all'):
+
+        output_fn_dat = self.output_file + '_block-' + str(block_n)
+        output_fn_frames = self.output_file + '_block-' + str(block_n)
+
+        if trial_handler is not None:
+            trial_handler.saveAsPickle(output_fn_dat)
+            trial_handler.saveAsWideText(output_fn_dat + '.csv', )
+
+        if self.screen.recordFrameIntervals:
+            # Save frame intervals to file
+            self.screen.saveFrameIntervals(fileName=output_fn_frames + '_frameintervals.log', clear=False)
+
+            # import matplotlib.pyplot as plt
+            # # Make a nice figure
+            # intervals_ms = np.array(self.screen.frameIntervals) * 1000
+            # m = np.mean(intervals_ms)
+            # sd = np.std(intervals_ms)
+            #
+            # msg = "Mean=%.1fms, s.d.=%.2f, 99%%CI(frame)=%.2f-%.2f"
+            # dist_string = msg % (m, sd, m - 2.58 * sd, m + 2.58 * sd)
+            # n_total = len(intervals_ms)
+            # n_dropped = sum(intervals_ms > (1.5 * m))
+            # msg = "Dropped/Frames = %i/%i = %.3f%%"
+            # dropped_string = msg % (n_dropped, n_total, 100 * n_dropped / float(n_total))
+            #
+            # # plot the frame intervals
+            # plt.figure(figsize=[12, 8])
+            # plt.subplot(1, 2, 1)
+            # plt.plot(intervals_ms, '-')
+            # plt.ylabel('t (ms)')
+            # plt.xlabel('frame N')
+            # plt.title(dropped_string)
+            #
+            # plt.subplot(1, 2, 2)
+            # plt.hist(intervals_ms, 50, normed=0, histtype='stepfilled')
+            # plt.xlabel('t (ms)')
+            # plt.ylabel('n frames')
+            # plt.title(dist_string)
+            # plt.savefig(output_fn_frames + '_frameintervals.png')
+
+    def close(self):
+        """ Saves stuff and closes """
+
+        self.save_data()
+        super(StopSignalSession, self).close()
+
+
     def run(self):
         """ Runs this Stop Signal task"""
 
         test_sound = TestSoundTrial(ID=-1, parameters={}, phase_durations=[1000], session=self, screen=self.screen,
                                     tracker=None)
         test_sound.run()
+        self.block_start_time = 0
 
-        trial_ID = 0
         for block_n in np.unique(self.design.block):
+            if block_n < self.start_block:
+                continue
             this_block_design = self.design.loc[self.design.block == block_n]
 
-            for block_trial_ID in range(this_block_design.shape[0]):
-                this_trial_info = this_block_design.iloc[block_trial_ID]
+            trial_handler = data.TrialHandler(this_block_design.to_dict('records'),
+                                              nReps=1,
+                                              method='sequential')
+
+            for block_trial_ID, this_trial_info in enumerate(trial_handler):
 
                 is_stop_trial = this_trial_info['stop_trial']
-                print(is_stop_trial)
                 if is_stop_trial:
                     this_trial_staircase_id = int(this_trial_info['staircase_id'])
                     this_trial_ssd = next(self.stairs[this_trial_staircase_id])
@@ -205,9 +288,11 @@ class StopSignalSession(MRISession):
 
                 these_phase_durations = self.phase_durations.copy()
                 these_phase_durations[1] = this_trial_info.jitter
-                these_phase_durations[3] = 1  # 9 - these_phase_durations[1] - these_phase_durations[2]
+                # NB we stop the trial 0.5s before the start of the new trial, to allow sufficient computation time
+                # for preparing the next trial. Therefore 8.5s instead of 9s.
+                these_phase_durations[3] = 8.5 - these_phase_durations[1] - these_phase_durations[2]
 
-                this_trial = StopSignalTrial(ID=trial_ID,
+                this_trial = StopSignalTrial(ID=int(this_trial_info.trial_ID),
                                              parameters=this_trial_parameters,
                                              phase_durations=these_phase_durations,
                                              session=self,
@@ -215,7 +300,35 @@ class StopSignalSession(MRISession):
 
                 # run the prepared trial
                 this_trial.run()
-                trial_ID += 1
+
+                # Record some stuff
+                trial_handler.addData('rt', this_trial.rt)
+                trial_handler.addData('response', this_trial.response)
+
+                # absolute times since session start
+                trial_handler.addData('start_time', this_trial.start_time)
+                trial_handler.addData('t_time', this_trial.t_time)
+                trial_handler.addData('jitter_time', this_trial.jitter_time)
+                trial_handler.addData('stimulus_time', this_trial.stimulus_time)
+                trial_handler.addData('iti_time', this_trial.iti_time)
+
+                # durations / time since actual trial start (note that the *actual* trial start is t_time!)
+                if is_stop_trial:
+                    trial_handler.addData('ssd', this_trial_ssd)
+                    trial_handler.addData('stop_signal_time_recorded', this_trial.bleep_time - this_trial.jitter_time)
+                    trial_handler.addData('staircase_start_val', this_staircase_start_val)
+
+                trial_handler.addData('phase_0_measured', this_trial.t_time - this_trial.start_time)
+                trial_handler.addData('phase_1_measured', this_trial.jitter_time - this_trial.t_time)
+                trial_handler.addData('phase_2_measured', this_trial.stimulus_time - this_trial.jitter_time)
+                trial_handler.addData('phase_3_measured', this_trial.iti_time - this_trial.stimulus_time)
+
+                # durations / time since actual start of the block. These are useful to create events-files later for
+                #  convolving. Can also grab these from the eventArray though.
+                trial_handler.addData('trial_t_time_block_measured', this_trial.t_time - self.block_start_time)
+                trial_handler.addData('stimulus_onset_time_block_measured', this_trial.jitter_time -
+                                      self.block_start_time)
+                # Counter-intuitive, but jitter_time is END of the jitter period = onset of stim
 
                 # Update staircase if this was a stop trial
                 if is_stop_trial:
@@ -230,9 +343,13 @@ class StopSignalSession(MRISession):
                     # out of trial
                     break
 
+            # Save
+            self.save_data(trial_handler, block_n)
+
             if self.stopped:
                 # out of block
                 break
+
 
             # end of block
             this_trial = EndOfBlockTrial(ID=int('999' + str(block_n)),

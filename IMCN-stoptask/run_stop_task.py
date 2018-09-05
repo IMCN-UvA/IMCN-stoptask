@@ -27,6 +27,8 @@ if sysErr:
 
 def main():
     # Load config
+    import glob
+    import datetime
     from exptools.utils.config import ExpToolsConfig
     config = ExpToolsConfig()
 
@@ -38,9 +40,24 @@ def main():
     my_monitor.setDistance(config.get('screen', 'physical_screen_distance'))
     my_monitor.saveMon()
 
-
     initials = raw_input('Your initials/subject number: ')
     session_num = int(raw_input('Session number: '))
+    start_block = int(raw_input('At which block do you want to start? NB: 1 is the first block! '))
+    if start_block > 1:
+        # check if previous stairs exist
+        now = datetime.datetime.now()
+        opfn = now.strftime("%Y-%m-%d")
+        expected_filename =  initials + '_' + str(session_num) + '_' + opfn
+        fns = glob.glob('./data/' + expected_filename + '_*_staircases.pkl')
+        if len(fns) == 0:
+            raw_input('Could not find previous stairs for this subject today... Enter any key to verify you want '
+                      'to make new staircases. ')
+        elif len(fns) == 1:
+            print('Found previous staircase file: %s' %fns[0])
+        elif len(fns) > 1:
+            print('Found multiple staircase files. Please remove the unwanted ones, otherwise I cannot run.')
+            print(fns)
+            core.quit()
 
     scanner = ''
     simulate = ''
@@ -56,12 +73,13 @@ def main():
             if simulate not in ['y', 'n']:
                 print('I don''t understand that. Please enter ''y'' or ''n''.')
 
-    sess = StopSignalSession(subject_initials=initials, index_number=session_num, tr=2, config=config)
+    sess = StopSignalSession(subject_initials=initials, index_number=session_num, tr=2, start_block=start_block,
+                             config=config)
 
     if simulate == 'y':
         # Run with simulated scanner (useful for behavioral pilots with eye-tracking)
         from psychopy.hardware.emulator import launchScan
-        scanner_emulator = launchScan(win=sess.screen, settings={'TR': 2, 'volumes': 30000, 'sync': 't'}, mode='Test')
+        scanner_emulator = launchScan(win=sess.screen, settings={'TR': 3, 'volumes': 30000, 'sync': 't'}, mode='Test')
     sess.run()
 
 
