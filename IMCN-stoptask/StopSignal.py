@@ -139,7 +139,7 @@ class StopSignalSession(MRISession):
                 self.stairs = pkl.load(f)
         else:
             # Make dict
-            info = {'startPoints': [.050, .100, .150, .200]}  # start points for the four staircases
+            info = {'startPoints': [.100, .200]}  # start points for the four staircases
 
             # create staircases
             self.stairs = []
@@ -155,7 +155,7 @@ class StopSignalSession(MRISession):
                                               stepType='lin',
                                               minVal=0,
                                               nTrials=1000,
-                                              maxVal=1.000,
+                                              maxVal=0.900,
                                               stepSizes=[0.050])
                 self.stairs.append(thisStair)
 
@@ -170,7 +170,7 @@ class StopSignalSession(MRISession):
 
             # how many stop trials this block?
             n_stop_trials = self.design.loc[self.design.block == block].stop_trial.sum()
-            staircase_idx = np.tile([0, 1, 2, 3], reps=1000)[:n_stop_trials]
+            staircase_idx = np.tile(np.arange(len(self.stairs)), reps=1000)[:n_stop_trials]
             np.random.shuffle(staircase_idx)
 
             # append to design
@@ -349,7 +349,6 @@ class StopSignalSession(MRISession):
             if self.stopped:
                 # out of block
                 break
-
 
             # end of block
             this_trial = EndOfBlockTrial(ID=int('999' + str(block_n)),
