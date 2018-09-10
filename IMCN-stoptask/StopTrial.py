@@ -65,7 +65,10 @@ class StopSignalTrial(MRITrial):
 
                     # phase 0 is ended by the MR trigger
                     if self.phase == 0:
-                        if self.trs_recorded > self.session.warmup_trs:
+                        if self.parameters['block_trial_ID'] == 0:
+                            if self.trs_recorded > self.session.warmup_trs:
+                                self.phase_forward()
+                        else:
                             self.phase_forward()
 
                 elif ev in self.session.response_button_signs:
