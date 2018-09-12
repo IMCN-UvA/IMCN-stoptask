@@ -41,45 +41,54 @@ def main():
     my_monitor.saveMon()
 
     initials = raw_input('Your initials/subject number: ')
-    session_num = int(raw_input('Session number: '))
-    start_block = int(raw_input('At which block do you want to start? NB: 1 is the first block! '))
-    if start_block > 1:
-        # check if previous stairs exist
-        now = datetime.datetime.now()
-        opfn = now.strftime("%Y-%m-%d")
-        expected_filename =  initials + '_' + str(session_num) + '_' + opfn
-        fns = glob.glob('./data/' + expected_filename + '_*_staircases.pkl')
-        if len(fns) == 0:
-            raw_input('Could not find previous stairs for this subject today... Enter any key to verify you want '
-                      'to make new staircases. ')
-        elif len(fns) == 1:
-            print('Found previous staircase file: %s' %fns[0])
-        elif len(fns) > 1:
-            print('Found multiple staircase files. Please remove the unwanted ones, otherwise I cannot run.')
-            print(fns)
-            core.quit()
+    if initials == 'pilot' or initials == 'practice':
+        session_tr = 2
+    else:
+        session_tr = int(raw_input('Session TR: '))
 
-    scanner = ''
-    simulate = ''
-    while scanner not in ['y', 'n']:
-        scanner = raw_input('Are you in the scanner (y/n)?: ')
-        if scanner not in ['y', 'n']:
-            print('I don''t understand that. Please enter ''y'' or ''n''.')
+    if initials == 'practice':
+        start_block = 1
+        simulate = 'y'
+    else:
+        start_block = int(raw_input('At which block do you want to start? NB: 1 is the first block! '))
+        if start_block > 1:
+            # check if previous stairs exist
+            now = datetime.datetime.now()
+            opfn = now.strftime("%Y-%m-%d")
+            expected_filename = initials + '_' + str(session_tr) + '_' + opfn
+            fns = glob.glob('./data/' + expected_filename + '_*_staircases.pkl')
+            fns.sort()
+            if len(fns) == 0:
+                raw_input('Could not find previous stairs for this subject today... Enter any key to verify you want '
+                          'to make new staircases. ')
+            elif len(fns) == 1:
+                print('Found previous staircase file: %s' % fns[0])
+            elif len(fns) > 1:
+                print('Found multiple staircase files. Please remove the unwanted ones, otherwise I cannot run.')
+                print(fns)
+                core.quit()
 
-    if scanner == 'n':
-        while simulate not in ['y', 'n']:
-            simulate = raw_input('Do you want to simulate scan pulses? This is useful during behavioral pilots '
-                                 '(y/n): ')
-            if simulate not in ['y', 'n']:
+        scanner = ''
+        simulate = ''
+        while scanner not in ['y', 'n']:
+            scanner = raw_input('Are you in the scanner (y/n)?: ')
+            if scanner not in ['y', 'n']:
                 print('I don''t understand that. Please enter ''y'' or ''n''.')
 
-    sess = StopSignalSession(subject_initials=initials, index_number=session_num, tr=2, start_block=start_block,
+        if scanner == 'n':
+            while simulate not in ['y', 'n']:
+                simulate = raw_input('Do you want to simulate scan pulses? This is useful during behavioral pilots (y/n): ')
+                if simulate not in ['y', 'n']:
+                    print('I don''t understand that. Please enter ''y'' or ''n''.')
+
+    sess = StopSignalSession(subject_initials=initials, index_number=session_tr, tr=session_tr, start_block=start_block,
                              config=config)
 
     if simulate == 'y':
         # Run with simulated scanner (useful for behavioral pilots with eye-tracking)
         from psychopy.hardware.emulator import launchScan
-        scanner_emulator = launchScan(win=sess.screen, settings={'TR': 3, 'volumes': 30000, 'sync': 't'}, mode='Test')
+        scanner_emulator = launchScan(win=sess.screen, settings={'TR': session_tr, 'volumes': 30000, 'sync': 't'},
+                                      mode='Test')
     sess.run()
 
 
