@@ -29,6 +29,11 @@ class StopSignalSession(MRISession):
         self.start_block = start_block  # allows for starting at a later block than 1
         self.warmup_trs = config.get('mri', 'warmup_trs')
 
+        if tr == 2:
+            self.trial_duration = 8 - .5
+        elif tr == 3:
+            self.trial_duration = 9 - 0.5
+
         if config.get('audio', 'engine') == 'psychopy':
             # BEFORE moving on, ensure that the correct audio driver is selected
             from psychopy import prefs
@@ -116,7 +121,7 @@ class StopSignalSession(MRISession):
 
     def load_design(self):
 
-        fn = 'sub-' + str(self.subject_initials).zfill(3) + '_session-' + str(self.index_number) + '_design'
+        fn = 'sub-' + str(self.subject_initials).zfill(3) + '_tr-' + str(self.index_number) + '_design'
         design = pd.read_csv(os.path.join('designs', fn + '.csv'), sep='\t', index_col=False)
 
         self.design = design
@@ -290,7 +295,7 @@ class StopSignalSession(MRISession):
                 these_phase_durations[1] = this_trial_info.jitter
                 # NB we stop the trial 0.5s before the start of the new trial, to allow sufficient computation time
                 # for preparing the next trial. Therefore 8.5s instead of 9s.
-                these_phase_durations[3] = 8.5 - these_phase_durations[1] - these_phase_durations[2]
+                these_phase_durations[3] = self.trial_duration - these_phase_durations[1] - these_phase_durations[2]
 
                 this_trial = StopSignalTrial(ID=int(this_trial_info.trial_ID),
                                              parameters=this_trial_parameters,

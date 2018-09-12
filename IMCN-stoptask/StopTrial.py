@@ -52,7 +52,7 @@ class StopSignalTrial(MRITrial):
                 elif ev == self.session.mri_trigger_key:  # TR pulse
                     self.trs_recorded += 1
                     if self.phase == 0:
-                        if self.trs_recorded > self.session.warmup_trs:
+                        if self.trs_recorded >= self.session.warmup_trs:
                             if self.parameters['block_trial_ID'] == 0:
                                 # make sure to register this pulse now as the start of the block/run
                                 self.session.block_start_time = time
@@ -66,7 +66,7 @@ class StopSignalTrial(MRITrial):
                     # phase 0 is ended by the MR trigger
                     if self.phase == 0:
                         if self.parameters['block_trial_ID'] == 0:
-                            if self.trs_recorded > self.session.warmup_trs:
+                            if self.trs_recorded >= self.session.warmup_trs:
                                 self.phase_forward()
                         else:
                             self.phase_forward()
