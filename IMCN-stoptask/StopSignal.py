@@ -42,18 +42,18 @@ class StopSignalSession(MRISession):
             prefs.general['audioLib'] = config.get('audio', 'backend')
             from psychopy.sound import Sound
 
-            self.bleeper = Sound(secs=0.5,
-                                 octave=4,
+            self.bleeper = Sound(secs=0.1,
+                                 octave=5,
                                  loops=0,
                                  sampleRate=44100,  name='')
-            self.bleeper.play()
+            # self.bleeper.play()
 
         elif config.get('audio', 'engine') == 'TK':
             self.setup_sound_system()
             self.read_sound_file('sounds/0.wav', '0')
 
             # to test sound:
-            self.play_sound(sound_index=0)
+            # self.play_sound(sound_index=0)
 
         self.response_button_signs = [config.get('input', 'response_button_left'),
                                       config.get('input', 'response_button_right')]
