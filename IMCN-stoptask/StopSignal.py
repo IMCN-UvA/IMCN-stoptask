@@ -33,6 +33,8 @@ class StopSignalSession(MRISession):
             self.trial_duration = 8 - .5
         elif tr == 3:
             self.trial_duration = 9 - 0.5
+        if self.subject_initials == 'pilot':
+            self.trial_duration = [8.5, 7.5, 8.5, 7.5]
 
         if config.get('audio', 'engine') == 'psychopy':
             # BEFORE moving on, ensure that the correct audio driver is selected
@@ -262,10 +264,26 @@ class StopSignalSession(MRISession):
         test_sound.run()
         self.block_start_time = 0
 
+        # start emulator TODO REMOVE THIS STUFF!!
+        # n_vols = [343+2, 513+2, 343+2, 513+2]
+        # trs = [3, 2, 3, 2]
+        # n_vols = [31+2, 21+2]
+        # trs = [3, 2]
+        # from psychopy.hardware.emulator import launchScan
+
         for block_n in np.unique(self.design.block):
             if block_n < self.start_block:
                 continue
             this_block_design = self.design.loc[self.design.block == block_n]
+
+            # scanner_emulator = launchScan(win=self.screen, settings={'TR': trs[block_n-1], 'volumes': n_vols[block_n-1],
+            #                                                          'sync': 't'},
+            #                               mode='Test')
+
+            if isinstance(self.trial_duration, list):
+                trial_duration = self.trial_duration[block_n-1]
+            else:
+                trial_duration = self.trial_duration
 
             trial_handler = data.TrialHandler(this_block_design.to_dict('records'),
                                               nReps=1,
@@ -295,7 +313,7 @@ class StopSignalSession(MRISession):
                 these_phase_durations[1] = this_trial_info.jitter
                 # NB we stop the trial 0.5s before the start of the new trial, to allow sufficient computation time
                 # for preparing the next trial. Therefore 8.5s instead of 9s.
-                these_phase_durations[3] = self.trial_duration - these_phase_durations[1] - these_phase_durations[2]
+                these_phase_durations[3] = trial_duration - these_phase_durations[1] - these_phase_durations[2]
 
                 this_trial = StopSignalTrial(ID=int(this_trial_info.trial_ID),
                                              parameters=this_trial_parameters,
@@ -358,7 +376,7 @@ class StopSignalSession(MRISession):
             # end of block
             this_trial = EndOfBlockTrial(ID=int('999' + str(block_n)),
                                          parameters={},
-                                         phase_durations=[1000],
+                                         phase_durations=[0.5, 1000],
                                          session=self,
                                          screen=self.screen)
             this_trial.run()

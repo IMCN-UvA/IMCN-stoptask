@@ -145,7 +145,7 @@ class Session(object):
         pygame.mixer.quit()
         self.screen.close()
         parsopf = open(self.output_file + '_outputDict.pkl', 'a')
-        pkl.dump(self.outputDict,parsopf)
+        pkl.dump(self.outputDict, parsopf)
         parsopf.close()
         # also output parameters as tsv
         opd = pd.DataFrame.from_records(self.outputDict['parameterArray'])

@@ -209,6 +209,8 @@ class EndOfBlockTrial(MRITrial):
 
                 elif ev == self.session.mri_trigger_key:  # TR pulse
                     self.events.append([99, time, self.session.clock.getTime() - self.start_time])
+                    # if self.phase == 0:
+                    #     self.phase_forward()
 
                 elif ev in self.session.response_button_signs:
                     self.events.append([ev, time, self.session.clock.getTime() - self.start_time, 'key_press'])
@@ -229,9 +231,11 @@ class EndOfBlockTrial(MRITrial):
         while not self.stopped:
             self.run_time = self.session.clock.getTime() - self.start_time
 
-            # waits for operator to press '+'
+            # waits for this phase to end (final pulse being collected)
             if self.phase == 0:
                 self.t_time = self.session.clock.getTime()
+                if (self.t_time - self.start_time) > self.phase_durations[0]:
+                    self.phase_forward()
 
             # events and draw, but only if we haven't stopped yet
             if not self.stopped:
@@ -242,7 +246,7 @@ class EndOfBlockTrial(MRITrial):
 
     def draw(self):
 
-        if self.phase == 0:   # waiting for scanner-time
+        if self.phase == 1:   # waiting for scanner-time
             self.instruction_text.draw()
 
         super(EndOfBlockTrial, self).draw()
