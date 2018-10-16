@@ -102,3 +102,14 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# do not include data
+data/
+
+# macOS
+.DS_Store
+.DS_store
+
+# PyCharm
+.idea
+presentation_settings_*/
